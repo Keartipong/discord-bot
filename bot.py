@@ -8,6 +8,8 @@ import asyncio
 import socket
 import aiohttp
 import requests
+from aiohttp import web
+import threading
 
 load_dotenv()
 token = os.getenv('DISCORD_TOKEN')
@@ -20,6 +22,87 @@ intents.members = True
 bot = commands.Bot(command_prefix='!', intents=intents, help_command=None)
 
 ALLOWED_CHANNELS = ['bot', 'test_bot']
+
+# HTTP Server สำหรับ Render
+async def handle_root(request):
+    """แสดงสถานะบอท"""
+    bot_status = "🟢 Online" if bot.is_ready() else "🔴 Offline"
+    guild_count = len(bot.guilds) if bot.guilds else 0
+    user_count = len(bot.users) if bot.users else 0
+    
+    html = f"""
+    <html>
+    <head>
+        <title>Discord Bot Status</title>
+        <style>
+            body {{ font-family: Arial, sans-serif; margin: 40px; background: #2c2f33; color: white; }}
+            .container {{ max-width: 600px; margin: 0 auto; }}
+            .status {{ padding: 20px; border-radius: 10px; background: #36393f; margin: 20px 0; }}
+            .online {{ border-left: 5px solid #43b581; }}
+            .offline {{ border-left: 5px solid #f04747; }}
+            .stat {{ display: flex; justify-content: space-between; margin: 10px 0; }}
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h1>🤖 Discord Bot Status</h1>
+            <div class="status {'online' if bot.is_ready() else 'offline'}">
+                <h2>Bot Status: {bot_status}</h2>
+                <div class="stat">
+                    <span>Bot Name:</span>
+                    <span>{bot.user.name if bot.user else 'Unknown'}</span>
+                </div>
+                <div class="stat">
+                    <span>Servers:</span>
+                    <span>{guild_count}</span>
+                </div>
+                <div class="stat">
+                    <span>Users:</span>
+                    <span>{user_count}</span>
+                </div>
+                <div class="stat">
+                    <span>Latency:</span>
+                    <span>{round(bot.latency * 1000)}ms</span>
+                </div>
+                <div class="stat">
+                    <span>Uptime:</span>
+                    <span>{time.strftime('%Y-%m-%d %H:%M:%S')}</span>
+                </div>
+            </div>
+            <p>✅ Bot is running and ready to serve!</p>
+        </div>
+    </body>
+    </html>
+    """
+    return web.Response(text=html, content_type='text/html')
+
+async def handle_health(request):
+    """Health check endpoint"""
+    return web.json_response({
+        'status': 'healthy',
+        'bot_ready': bot.is_ready(),
+        'guild_count': len(bot.guilds) if bot.guilds else 0,
+        'latency': round(bot.latency * 1000) if bot.latency else 0
+    })
+
+async def start_web_server():
+    """เริ่มต้น HTTP server"""
+    app = web.Application()
+    app.router.add_get('/', handle_root)
+    app.router.add_get('/health', handle_health)
+    
+    # ใช้พอร์ตจาก environment variable หรือใช้ 10000 เป็นค่าเริ่มต้น
+    port = int(os.environ.get('PORT', 10000))
+    
+    runner = web.AppRunner(app)
+    await runner.setup()
+    
+    site = web.TCPSite(runner, '0.0.0.0', port)
+    await site.start()
+    
+    print(f"🌐 HTTP server started on port {port}")
+    print(f"📊 Status page: http://localhost:{port}/")
+    print(f"🏥 Health check: http://localhost:{port}/health")
 
 def is_allowed_channel():
     """ตรวจสอบว่าเป็นห้องที่อนุญาตหรือไม่"""
@@ -407,8 +490,6 @@ async def help_command(ctx):
     
     await ctx.send(embed=embed)
 
-# ============ คำสั่งสำหรับดูห้องที่อนุญาต ============
-
 @bot.command()
 @is_allowed_channel()
 @commands.cooldown(1, 10, commands.BucketType.user)
@@ -461,24 +542,7 @@ async def load_cogs():
     except Exception as e:
         print(f"❌ Failed to load music commands: {e}")
 
-async def main():
-    """ฟังก์ชันหลักในการรันบอท"""
-    if token is None:
-        print("Error: DISCORD_TOKEN not found in environment variables.")
-        return
-    
-    print(f"🎯 Bot will only respond to commands in channels: {', '.join(ALLOWED_CHANNELS)}")
-    
-    async with bot:
-        await load_cogs()
-        try:
-            await bot.start(token)
-        except discord.errors.LoginFailure:
-            print("❌ Invalid token provided.")
-        except Exception as e:
-            print(f"❌ Error starting bot: {e}")
-            
-#Ai
+# AI Command
 @bot.command()
 async def chat(ctx, *, prompt):
     """คุยกับ AI (DeepInfra)"""
@@ -507,6 +571,26 @@ async def chat(ctx, *, prompt):
                 await ctx.send(f"เกิดข้อผิดพลาดจาก DeepInfra: {error_msg}")
         except Exception as e:
             await ctx.send(f"เกิดข้อผิดพลาด: {e}")
+
+async def main():
+    """ฟังก์ชันหลักในการรันบอท"""
+    if token is None:
+        print("Error: DISCORD_TOKEN not found in environment variables.")
+        return
+    
+    print(f"🎯 Bot will only respond to commands in channels: {', '.join(ALLOWED_CHANNELS)}")
+    
+    # เริ่มต้น HTTP server
+    await start_web_server()
+    
+    async with bot:
+        await load_cogs()
+        try:
+            await bot.start(token)
+        except discord.errors.LoginFailure:
+            print("❌ Invalid token provided.")
+        except Exception as e:
+            print(f"❌ Error starting bot: {e}")
 
 if __name__ == "__main__":
     asyncio.run(main())

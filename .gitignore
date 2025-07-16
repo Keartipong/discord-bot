@@ -1,0 +1,15 @@
+# ไม่ track token หรือข้อมูลลับ
+.env
+
+# ไม่ track ไฟล์ log
+*.log
+
+# ไม่ track ไฟล์ cache ของ Python
+__pycache__/
+*.py[cod]
+
+# ไม่ track ไฟล์ชั่วคราวจาก editor
+.vscode/
+*.swp
+*.swo
+.DS_Store

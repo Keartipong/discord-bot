@@ -7,7 +7,6 @@ import os
 import asyncio
 import socket
 import aiohttp
-import openai
 import requests
 
 load_dotenv()
